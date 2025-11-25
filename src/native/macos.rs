@@ -20,6 +20,7 @@ use {
     },
 };
 
+
 pub struct MacosDisplay {
     window: ObjcId,
     view: ObjcId,
@@ -55,11 +56,11 @@ impl MacosDisplay {
         unsafe {
             if grab {
                 self.move_mouse_inside_window(window);
-                CGAssociateMouseAndMouseCursorPosition(false);
+                // Don't use CGAssociateMouseAndMouseCursorPosition - it breaks mouse clicks!
+                // Instead, we warp cursor back to center after each mouse move event.
                 let () = msg_send![class!(NSCursor), hide];
             } else {
                 let () = msg_send![class!(NSCursor), unhide];
-                CGAssociateMouseAndMouseCursorPosition(true);
             }
         }
     }
@@ -460,6 +461,14 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 if let Some(event_handler) = payload.context() {
                     event_handler.raw_mouse_motion(dx as f32, dy as f32);
                 }
+                // Warp cursor back to window center to keep it inside the window
+                // This ensures clicks will be delivered to our window, not other apps
+                let frame: NSRect = msg_send![payload.window, frame];
+                let center_x = frame.origin.x + frame.size.width / 2.0;
+                // macOS screen coordinates have origin at bottom-left
+                let screen_height: f64 = CGDisplayPixelsHigh(CGMainDisplayID()) as f64;
+                let center_y = screen_height - (frame.origin.y + frame.size.height / 2.0);
+                CGWarpMouseCursorPosition(NSPoint { x: center_x, y: center_y });
             } else {
                 let point: NSPoint = msg_send!(event, locationInWindow);
                 let point = payload.transform_mouse_point(&point);
