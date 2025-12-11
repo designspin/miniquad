@@ -130,11 +130,11 @@ fn send_message(message: Message) {
 pub fn define_glk_or_mtk_view(superclass: &Class) -> *const Class {
     let mut decl = ClassDecl::new("QuadView", superclass).unwrap();
 
-    fn on_touch(this: &Object, event: ObjcId, phase: TouchPhase) {
+    fn on_touch(this: &Object, touches: ObjcId, phase: TouchPhase) {
         unsafe {
-            let enumerator: ObjcId = msg_send![event, allTouches];
-            let size: u64 = msg_send![enumerator, count];
-            let enumerator: ObjcId = msg_send![enumerator, objectEnumerator];
+            // Use only the changed touches, not allTouches
+            let size: u64 = msg_send![touches, count];
+            let enumerator: ObjcId = msg_send![touches, objectEnumerator];
 
             for _ in 0..size {
                 let ios_touch: ObjcId = msg_send![enumerator, nextObject];
@@ -163,20 +163,20 @@ pub fn define_glk_or_mtk_view(superclass: &Class) -> *const Class {
             }
         }
     }
-    extern "C" fn touches_began(this: &Object, _: Sel, _: ObjcId, event: ObjcId) {
-        on_touch(this, event, TouchPhase::Started);
+    extern "C" fn touches_began(this: &Object, _: Sel, touches: ObjcId, _event: ObjcId) {
+        on_touch(this, touches, TouchPhase::Started);
     }
 
-    extern "C" fn touches_moved(this: &Object, _: Sel, _: ObjcId, event: ObjcId) {
-        on_touch(this, event, TouchPhase::Moved);
+    extern "C" fn touches_moved(this: &Object, _: Sel, touches: ObjcId, _event: ObjcId) {
+        on_touch(this, touches, TouchPhase::Moved);
     }
 
-    extern "C" fn touches_ended(this: &Object, _: Sel, _: ObjcId, event: ObjcId) {
-        on_touch(this, event, TouchPhase::Ended);
+    extern "C" fn touches_ended(this: &Object, _: Sel, touches: ObjcId, _event: ObjcId) {
+        on_touch(this, touches, TouchPhase::Ended);
     }
 
-    extern "C" fn touches_canceled(this: &Object, _: Sel, _: ObjcId, event: ObjcId) {
-        on_touch(this, event, TouchPhase::Cancelled);
+    extern "C" fn touches_canceled(this: &Object, _: Sel, touches: ObjcId, _event: ObjcId) {
+        on_touch(this, touches, TouchPhase::Cancelled);
     }
 
     extern "C" fn process_message(this: &Object, _: Sel, _: ObjcId) {
@@ -461,6 +461,7 @@ unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, _high_dpi: 
     let device = MTLCreateSystemDefaultDevice();
     msg_send_![mtk_view_obj, setDevice: device];
     msg_send_![mtk_view_obj, setUserInteractionEnabled: YES];
+    msg_send_![mtk_view_obj, setMultipleTouchEnabled: YES];
 
     View {
         view: mtk_view_obj,
