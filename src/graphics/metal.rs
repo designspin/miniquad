@@ -158,7 +158,10 @@ impl From<PrimitiveType> for MTLPrimitiveType {
 impl From<TextureFormat> for MTLPixelFormat {
     fn from(format: TextureFormat) -> Self {
         match format {
-            TextureFormat::RGBA8 => MTLPixelFormat::RGBA8Unorm,
+            // Use BGRA8Unorm to match the screen view format - this is required
+            // because Metal pipelines must have matching pixel formats with render passes.
+            // The screen view is set to BGRA8Unorm, so render targets must also use it.
+            TextureFormat::RGBA8 => MTLPixelFormat::BGRA8Unorm,
             //TODO: Depth16Unorm ?
             TextureFormat::Depth => MTLPixelFormat::Depth32Float_Stencil8,
             TextureFormat::RGBA16F => MTLPixelFormat::RGBA16Float,
@@ -279,6 +282,8 @@ pub struct MetalContext {
     // cached pipeline from apply_pipeline
     current_pipeline: Option<Pipeline>,
     current_ub_offset: u64,
+    // current framebuffer height for scissor rect calculations
+    current_framebuffer_height: f32,
 }
 
 impl Default for MetalContext {
@@ -373,6 +378,7 @@ impl MetalContext {
                 uniform_buffers,
                 current_frame_index: 1,
                 current_ub_offset: 0,
+                current_framebuffer_height: crate::window::screen_size().1,
             }
         }
     }
@@ -408,14 +414,30 @@ impl RenderingBackend for MetalContext {
             msg_send_![texture.texture, release];
         }
     }
-    fn apply_viewport(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) {}
+    fn apply_viewport(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        assert!(self.render_encoder.is_some());
+
+        // Metal uses bottom-left origin, so we need to flip Y using the current framebuffer height
+        let fb_height = self.current_framebuffer_height;
+        let v = MTLViewport {
+            originX: x as f64,
+            originY: (fb_height as i32 - (y + h)) as f64,
+            width: w as f64,
+            height: h as f64,
+            znear: 0.0,
+            zfar: 1.0,
+        };
+        unsafe { msg_send_![self.render_encoder.unwrap(), setViewport: v] };
+    }
     fn apply_scissor_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
         assert!(self.render_encoder.is_some());
 
-        let (_, screen_height) = crate::window::screen_size();
+        // Use the current framebuffer height (set in begin_pass) instead of screen_height
+        // This is critical for rendering to render targets with different sizes than the screen
+        let fb_height = self.current_framebuffer_height;
         let r = MTLScissorRect {
             x: x as _,
-            y: (screen_height as i32 - (y + h)) as u64,
+            y: (fb_height as i32 - (y + h)) as u64,
             width: w as _,
             height: h as _,
         };
@@ -1158,7 +1180,7 @@ impl RenderingBackend for MetalContext {
                 self.command_buffer = Some(msg_send![self.command_queue, commandBuffer]);
             }
 
-            let (descriptor, _, _) = match pass {
+            let (descriptor, _, h) = match pass {
                 None => {
                     let (screen_width, screen_height) = crate::window::screen_size();
                     (
@@ -1186,6 +1208,9 @@ impl RenderingBackend for MetalContext {
                 }
             };
             assert!(!descriptor.is_null());
+
+            // Store framebuffer height for scissor rect calculations
+            self.current_framebuffer_height = h as f32;
 
             let color_attachments = msg_send_![descriptor, colorAttachments];
             let color_attachment = msg_send_![color_attachments, objectAtIndexedSubscript: 0];

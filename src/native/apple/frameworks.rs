@@ -867,6 +867,17 @@ pub struct MTLScissorRect {
     pub height: u64,
 }
 
+#[repr(C)]
+#[derive(Copy, Debug, Clone)]
+pub struct MTLViewport {
+    pub originX: f64,
+    pub originY: f64,
+    pub width: f64,
+    pub height: f64,
+    pub znear: f64,
+    pub zfar: f64,
+}
+
 // CORE AUDIO
 
 pub const kAudioUnitManufacturer_Apple: u32 = 1634758764;

@@ -314,6 +314,119 @@ impl Display for ShaderError {
 
 impl Error for ShaderError {}
 
+#[cfg(target_vendor = "apple")]
+/// Start capturing the next Metal frame using MTLCaptureManager.
+/// Returns the path of the `.gputrace` file when capture begins.
+pub fn start_metal_capture(output_path: Option<&str>) -> Result<String, String> {
+    use crate::native::apple::{
+        apple_util::{self, msg_send_},
+        frameworks::{class, msg_send, nil, sel, sel_impl, ObjcId, BOOL, NO, YES},
+    };
+
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    unsafe {
+        let capture_manager: ObjcId = msg_send_![class!(MTLCaptureManager), sharedCaptureManager];
+        if capture_manager.is_null() {
+            return Err("MTLCaptureManager not available".to_string());
+        }
+
+        let destination_gpu_trace_document = 2u64; // MTLCaptureDestinationGPUTraceDocument
+        let supports_destination: BOOL =
+            msg_send![capture_manager, supportsDestination: destination_gpu_trace_document];
+        if supports_destination == NO {
+            return Err(
+                "Metal capture destination not supported. Ensure MetalCaptureEnabled=true is set in the app Info.plist near the built binary.".to_string(),
+            );
+        }
+
+        // Stop any previous capture to avoid MTLCaptureError.
+        let is_capturing: BOOL = msg_send![capture_manager, isCapturing];
+        if is_capturing == YES {
+            let _: () = msg_send![capture_manager, stopCapture];
+        }
+
+        let descriptor: ObjcId = msg_send_![class!(MTLCaptureDescriptor), new];
+        if descriptor.is_null() {
+            return Err("Failed to allocate MTLCaptureDescriptor".to_string());
+        }
+
+        let view = crate::window::apple_view();
+        if view.is_null() {
+            let _: () = msg_send![descriptor, release];
+            return Err("apple_view is null".to_string());
+        }
+
+        let device: ObjcId = msg_send![view, device];
+        if device.is_null() {
+            let _: () = msg_send![descriptor, release];
+            return Err("Failed to fetch MTLDevice".to_string());
+        }
+
+        msg_send_![descriptor, setCaptureObject: device];
+
+        let capture_path = output_path.map(|path| path.to_string()).unwrap_or_else(|| {
+            let mut temp_path = std::env::temp_dir();
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            temp_path.push(format!("metal_capture_{timestamp}.gputrace"));
+            temp_path.to_string_lossy().into_owned()
+        });
+
+        let ns_path = apple_util::str_to_nsstring(&capture_path);
+        let url: ObjcId = msg_send![class!(NSURL), fileURLWithPath: ns_path];
+        msg_send_![descriptor, setDestination: destination_gpu_trace_document];
+        msg_send_![descriptor, setOutputURL: url];
+
+        let mut error: ObjcId = nil;
+        let started: BOOL = msg_send![
+            capture_manager,
+            startCaptureWithDescriptor: descriptor
+            error: &mut error
+        ];
+
+        let _: () = msg_send![descriptor, release];
+
+        if started == NO {
+            if !error.is_null() {
+                let description: ObjcId = msg_send![error, localizedDescription];
+                let message = apple_util::nsstring_to_string(description);
+                return Err(message);
+            }
+            return Err("startCaptureWithDescriptor failed".to_string());
+        }
+
+        Ok(capture_path)
+    }
+}
+
+#[cfg(not(target_vendor = "apple"))]
+pub fn start_metal_capture(_output_path: Option<&str>) -> Result<String, String> {
+    Err("Metal capture is only available on Apple platforms".to_string())
+}
+
+#[cfg(target_vendor = "apple")]
+/// Stop an active Metal capture if one is running.
+pub fn stop_metal_capture() {
+    use crate::native::apple::{
+        apple_util::msg_send_,
+        frameworks::{class, msg_send, sel, sel_impl, ObjcId},
+    };
+
+    unsafe {
+        let capture_manager: ObjcId = msg_send_![class!(MTLCaptureManager), sharedCaptureManager];
+        if capture_manager.is_null() {
+            return;
+        }
+        let _: () = msg_send![capture_manager, stopCapture];
+    }
+}
+
+#[cfg(not(target_vendor = "apple"))]
+pub fn stop_metal_capture() {}
+
 /// List of all the possible formats of input data when uploading to texture.
 /// The list is built by intersection of texture formats supported by 3.3 core profile and webgl1.
 #[repr(u8)]

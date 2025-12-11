@@ -20,7 +20,6 @@ use {
     },
 };
 
-
 pub struct MacosDisplay {
     window: ObjcId,
     view: ObjcId,
@@ -468,7 +467,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 // macOS screen coordinates have origin at bottom-left
                 let screen_height: f64 = CGDisplayPixelsHigh(CGMainDisplayID()) as f64;
                 let center_y = screen_height - (frame.origin.y + frame.size.height / 2.0);
-                CGWarpMouseCursorPosition(NSPoint { x: center_x, y: center_y });
+                CGWarpMouseCursorPosition(NSPoint {
+                    x: center_x,
+                    y: center_y,
+                });
             } else {
                 let point: NSPoint = msg_send!(event, locationInWindow);
                 let point = payload.transform_mouse_point(&point);
