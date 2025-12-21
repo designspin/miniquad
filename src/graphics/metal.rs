@@ -561,9 +561,6 @@ impl RenderingBackend for MetalContext {
         resolve_img: Option<&[TextureId]>,
         depth_img: Option<TextureId>,
     ) -> RenderPass {
-        if resolve_img.is_some() {
-            unimplemented!("resolve textures are not yet implemented on metal");
-        }
         unsafe {
             let render_pass_desc =
                 msg_send_![class!(MTLRenderPassDescriptor), renderPassDescriptor];
@@ -571,10 +568,19 @@ impl RenderingBackend for MetalContext {
             assert!(!render_pass_desc.is_null());
             for (i, color_img) in color_img.iter().enumerate() {
                 let color_texture = self.textures.get(*color_img).texture;
+                let resolve_texture = resolve_img
+                    .and_then(|imgs| imgs.get(i))
+                    .map(|id| self.textures.get(*id).texture);
                 let color_attachment = msg_send_![msg_send_![render_pass_desc, colorAttachments], objectAtIndexedSubscript:i];
                 msg_send_![color_attachment, setTexture: color_texture];
                 msg_send_![color_attachment, setLoadAction: MTLLoadAction::Clear];
-                msg_send_![color_attachment, setStoreAction: MTLStoreAction::Store];
+                if let Some(resolve_tex) = resolve_texture {
+                    // MSAA resolve path
+                    msg_send_![color_attachment, setResolveTexture: resolve_tex];
+                    msg_send_![color_attachment, setStoreAction: MTLStoreAction::MultisampleResolve];
+                } else {
+                    msg_send_![color_attachment, setStoreAction: MTLStoreAction::Store];
+                }
             }
             if let Some(depth_img) = depth_img {
                 let depth_texture = self.textures.get(depth_img).texture;
