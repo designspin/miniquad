@@ -1236,6 +1236,22 @@ impl RenderingBackend for MetalContext {
                 }
             }
 
+            let depth_attachment: ObjcId = msg_send_![descriptor, depthAttachment];
+            if !depth_attachment.is_null() {
+                msg_send_![depth_attachment, setStoreAction: MTLStoreAction::Store];
+                match action {
+                    PassAction::Clear { depth, .. } => {
+                        msg_send_![depth_attachment, setLoadAction: MTLLoadAction::Clear];
+                        if let Some(depth) = depth {
+                            msg_send_![depth_attachment, setClearDepth: depth as f64];
+                        }
+                    }
+                    PassAction::Nothing => {
+                        msg_send_![depth_attachment, setLoadAction: MTLLoadAction::Load];
+                    }
+                }
+            }
+
             let render_encoder = msg_send_![
                 self.command_buffer.unwrap(),
                 renderCommandEncoderWithDescriptor: descriptor
