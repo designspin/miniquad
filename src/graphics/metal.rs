@@ -158,10 +158,12 @@ impl From<PrimitiveType> for MTLPrimitiveType {
 impl From<TextureFormat> for MTLPixelFormat {
     fn from(format: TextureFormat) -> Self {
         match format {
-            // Use BGRA8Unorm to match the screen view format - this is required
-            // because Metal pipelines must have matching pixel formats with render passes.
-            // The screen view is set to BGRA8Unorm, so render targets must also use it.
-            TextureFormat::RGBA8 => MTLPixelFormat::BGRA8Unorm,
+            // Data textures uploaded via `replaceRegion` from RGBA
+            // byte order — keep them in RGBA layout so Metal stores
+            // bytes where we expect. Render targets override this
+            // to BGRA8Unorm (see `new_texture`) to match the
+            // screen view's pixel format.
+            TextureFormat::RGBA8 => MTLPixelFormat::RGBA8Unorm,
             //TODO: Depth16Unorm ?
             TextureFormat::Depth => MTLPixelFormat::Depth32Float_Stencil8,
             TextureFormat::RGBA16F => MTLPixelFormat::RGBA16Float,
@@ -739,7 +741,14 @@ impl RenderingBackend for MetalContext {
 
             if access == TextureAccess::RenderTarget {
                 if params.format != TextureFormat::Depth {
-                    let pixel_format: MTLPixelFormat = params.format.into();
+                    // Color render targets must match the screen
+                    // view's pixel format (BGRA8Unorm) so pipelines
+                    // can bind both without format-mismatch errors.
+                    // Other formats pass through unchanged.
+                    let pixel_format: MTLPixelFormat = match params.format {
+                        TextureFormat::RGBA8 => MTLPixelFormat::BGRA8Unorm,
+                        other => other.into(),
+                    };
                     msg_send_![descriptor, setPixelFormat: pixel_format];
                 }
                 msg_send_![descriptor, setStorageMode: MTLStorageMode::Private];
