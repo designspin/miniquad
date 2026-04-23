@@ -442,7 +442,7 @@ unsafe fn create_opengl_view(screen_rect: NSRect, _sample_count: i32, high_dpi: 
     }
 }
 
-unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, _high_dpi: bool) -> View {
+unsafe fn create_metal_view(screen_rect: NSRect, sample_count: i32, _high_dpi: bool) -> View {
     let mtk_view_obj: ObjcId = msg_send![define_glk_or_mtk_view(class!(MTKView)), alloc];
     let mtk_view_obj: ObjcId = msg_send![mtk_view_obj, initWithFrame: screen_rect];
 
@@ -460,6 +460,12 @@ unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, _high_dpi: 
     msg_send_![mtk_view_obj, setDelegate: mtk_view_dlg_obj];
     let device = MTLCreateSystemDefaultDevice();
     msg_send_![mtk_view_obj, setDevice: device];
+    msg_send_![mtk_view_obj, setColorPixelFormat: MTLPixelFormat::BGRA8Unorm];
+    msg_send_![
+        mtk_view_obj,
+        setDepthStencilPixelFormat: MTLPixelFormat::Depth32Float_Stencil8
+    ];
+    msg_send_![mtk_view_obj, setSampleCount: sample_count];
     msg_send_![mtk_view_obj, setUserInteractionEnabled: YES];
     msg_send_![mtk_view_obj, setMultipleTouchEnabled: YES];
 
