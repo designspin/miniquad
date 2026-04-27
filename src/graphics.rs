@@ -3,6 +3,44 @@
 use crate::native::gl::*;
 
 use std::{error::Error, fmt::Display};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// Per-frame draw-call instrumentation. Every backend's `draw` impl
+// increments this counter; game code reads + resets per frame to see
+// how many draws per frame the renderer is issuing. Thread-safe
+// relaxed atomics; contention is impossible (single render thread).
+static DRAW_CALL_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Current accumulated draw-call count since the last reset.
+pub fn draw_call_count() -> u64 {
+    DRAW_CALL_COUNT.load(Ordering::Relaxed)
+}
+
+/// Reset the accumulated draw-call count to zero.
+pub fn reset_draw_call_count() {
+    DRAW_CALL_COUNT.store(0, Ordering::Relaxed);
+}
+
+/// Internal helper called by backend `draw` impls.
+pub(crate) fn bump_draw_call_count() {
+    DRAW_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+// GPU time of the most recently committed frame, in nanoseconds.
+// Currently only populated by the Metal backend (read from
+// MTLCommandBuffer.GPUStartTime/GPUEndTime after waitUntilCompleted).
+// GL backend leaves it at zero.
+static LAST_FRAME_GPU_TIME_NS: AtomicU64 = AtomicU64::new(0);
+
+/// GPU time for the most recently completed frame, in nanoseconds.
+/// Returns 0 on backends that don't expose GPU timing (GL).
+pub fn last_frame_gpu_time_ns() -> u64 {
+    LAST_FRAME_GPU_TIME_NS.load(Ordering::Relaxed)
+}
+
+pub(crate) fn store_last_frame_gpu_time_ns(ns: u64) {
+    LAST_FRAME_GPU_TIME_NS.store(ns, Ordering::Relaxed);
+}
 
 //pub use texture::{FilterMode, TextureAccess, TextureFormat, TextureParams, TextureWrap};
 

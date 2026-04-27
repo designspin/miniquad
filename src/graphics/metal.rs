@@ -967,7 +967,10 @@ impl RenderingBackend for MetalContext {
             msg_send_![descriptor, setFragmentFunction:shader_internal.fragment_function];
             msg_send_![descriptor, setVertexDescriptor: vertex_descriptor];
             let color_attachments = msg_send_![descriptor, colorAttachments];
-            for i in 0..2 {
+            // Single-target only. Configuring attachment 1 forced 8-byte
+            // imageblocks on Apple Silicon and tripped Metal validation
+            // because no texture is bound to slot 1 in any render pass.
+            for i in 0..1 {
                 let color_attachment = msg_send_![color_attachments, objectAtIndexedSubscript: i];
                 let view_pixel_format: MTLPixelFormat = msg_send![self.view, colorPixelFormat];
                 msg_send_![color_attachment, setPixelFormat: view_pixel_format];
@@ -1299,7 +1302,17 @@ impl RenderingBackend for MetalContext {
     }
 
     fn draw(&self, base_element: i32, num_elements: i32, num_instances: i32) {
+        super::bump_draw_call_count();
         assert!(self.render_encoder.is_some(), "draw before begin_pass!");
+        // Catch upstream callers passing garbage. 65536 is far above any
+        // sane single-draw count; if a real use case ever exceeds it, raise
+        // the bound. Without this, bad values slip through to Metal and
+        // either trigger validation aborts or cause obscure GPU stalls.
+        assert!(
+            (0..=65_536).contains(&num_instances),
+            "miniquad draw() called with absurd num_instances={} (elements={}, base={})",
+            num_instances, num_elements, base_element
+        );
         let render_encoder = self.render_encoder.unwrap();
         assert!(self.index_buffer.is_some());
         let index_buffer = self.index_buffer.unwrap();
@@ -1328,11 +1341,19 @@ impl RenderingBackend for MetalContext {
     fn commit_frame(&mut self) {
         unsafe {
             assert!(!self.command_queue.is_null());
+            let cb = self.command_buffer.unwrap();
             let drawable: ObjcId = msg_send!(self.view, currentDrawable);
             //msg_send_![drawable, retain];
-            msg_send_![self.command_buffer.unwrap(), presentDrawable: drawable];
-            msg_send_![self.command_buffer.unwrap(), commit];
-            msg_send_![self.command_buffer.unwrap(), waitUntilCompleted];
+            msg_send_![cb, presentDrawable: drawable];
+            msg_send_![cb, commit];
+            msg_send_![cb, waitUntilCompleted];
+            // GPUStartTime/GPUEndTime are CFTimeInterval (seconds, f64).
+            // Valid only after the buffer reaches Completed state, which
+            // waitUntilCompleted guarantees.
+            let start: f64 = msg_send![cb, GPUStartTime];
+            let end: f64 = msg_send![cb, GPUEndTime];
+            let delta_ns = ((end - start).max(0.0) * 1.0e9) as u64;
+            super::store_last_frame_gpu_time_ns(delta_ns);
         }
         for buffer in &mut self.buffers {
             buffer.next_value = 0;

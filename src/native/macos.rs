@@ -846,6 +846,12 @@ unsafe fn create_metal_view(_: &mut MacosDisplay, sample_count: i32, _: bool) ->
     let () = msg_send![view, setSampleCount: sample_count];
     let () = msg_send![view, setPaused: true];
 
+    // CAMetalLayer.opaque defaults to NO, which blocks direct-to-display
+    // scanout (every frame goes through WindowServer compositing). The
+    // NSView isOpaque override doesn't propagate to the underlying layer.
+    let layer: ObjcId = msg_send![view, layer];
+    let () = msg_send![layer, setOpaque: YES];
+
     view
 }
 

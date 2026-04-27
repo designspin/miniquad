@@ -1718,6 +1718,7 @@ impl RenderingBackend for GlContext {
     }
 
     fn draw(&self, base_element: i32, num_elements: i32, num_instances: i32) {
+        super::bump_draw_call_count();
         assert!(
             self.cache.cur_pipeline.is_some(),
             "Drawing without any binded pipeline"
