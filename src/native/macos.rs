@@ -1210,6 +1210,14 @@ where
     let distant_past: ObjcId = msg_send![class!(NSDate), distantPast];
     let mut done = false;
     while !(done || crate::native_display().lock().unwrap().quit_ordered) {
+        // [NSApp run] wraps each iteration in an autorelease pool so
+        // autoreleased objects (NSEvents, the Metal currentDrawable, etc.)
+        // are freed every frame. Reimplementing the run loop without one
+        // leaks ~1MB/frame on Metal — the drawable retains a framebuffer
+        // until it drains. Match the system behaviour with a per-iteration
+        // pool drained at the end of the body.
+        let autorelease_pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
+
         while let Ok(request) = display.native_requests.try_recv() {
             display.process_request(request);
         }
@@ -1239,5 +1247,7 @@ where
         if !conf.platform.blocking_event_loop || display.update_requested {
             perform_redraw(&mut display, conf.platform.apple_gfx_api, false);
         }
+
+        let () = msg_send![autorelease_pool, drain];
     }
 }
