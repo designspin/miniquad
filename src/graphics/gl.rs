@@ -481,12 +481,22 @@ pub struct ShaderImage {
 fn get_uniform_location(program: GLuint, name: &str) -> Option<i32> {
     let cname = CString::new(name).unwrap_or_else(|e| panic!("{}", e));
     let location = unsafe { glGetUniformLocation(program, cname.as_ptr()) };
-
-    if location == -1 {
-        return None;
+    if location != -1 {
+        return Some(location);
     }
 
-    Some(location)
+    // For array uniforms the OpenGL spec allows either `name` or `name[0]`,
+    // but Apple's (deprecated) GL only resolves the `[0]` form. Fall back
+    // to that so array uniforms registered as bare names still bind.
+    if !name.contains('[') {
+        let array_cname = CString::new(format!("{}[0]", name)).unwrap();
+        let location = unsafe { glGetUniformLocation(program, array_cname.as_ptr()) };
+        if location != -1 {
+            return Some(location);
+        }
+    }
+
+    None
 }
 
 pub(crate) struct RenderPassInternal {
