@@ -810,6 +810,21 @@ impl RenderingBackend for MetalContext {
             msg_send_![sampler_descriptor, setMagFilter: mag_filter];
             msg_send_![sampler_descriptor, setMipFilter: mipmap_filter];
 
+            // Apply the requested wrap mode at creation time. Without
+            // this, `params.wrap` is silently ignored on the Metal
+            // backend (the sampler defaults to ClampToEdge), so any
+            // surface authored with UVs past 1.0 gets the last pixel
+            // column stretched instead of tiled — a bug shared with
+            // upstream miniquad. The GL backend reads `params.wrap`
+            // in its `new_texture` so it never had this issue.
+            let wrap_mode = match params.wrap {
+                TextureWrap::Repeat => MTLSamplerAddressMode::Repeat,
+                TextureWrap::Mirror => MTLSamplerAddressMode::MirrorRepeat,
+                TextureWrap::Clamp => MTLSamplerAddressMode::ClampToEdge,
+            };
+            msg_send_![sampler_descriptor, setSAddressMode: wrap_mode];
+            msg_send_![sampler_descriptor, setTAddressMode: wrap_mode];
+
             let sampler_state = msg_send_![
                 self.device,
                 newSamplerStateWithDescriptor: sampler_descriptor
