@@ -406,13 +406,16 @@ impl Wgl {
 
         // CreateContextAttribsARB is supposed to create the context with
         // the highest version version possible
-        // but, somehow, sometimes, it creates 2.1 context when 3.1 is in fact available
-        // so this is a workaround: try to create 3.1, and if it fails, go for 2.1
+        // but, somehow, sometimes, it creates 2.1 context when 3.2 is in fact available
+        // so this is a workaround: try to create 3.2, and if it fails, go for 2.1
+        // NOTE: profiles (CORE_PROFILE_BIT) only exist from GL 3.2 onward;
+        // requesting a core profile against 3.1 is undefined per spec and
+        // garbles rendering on some Windows drivers. Keep this at 3.2.
         let attrs = [
             WGL_CONTEXT_MAJOR_VERSION_ARB,
             3,
             WGL_CONTEXT_MINOR_VERSION_ARB,
-            1,
+            2,
             WGL_CONTEXT_FLAGS_ARB,
             WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
             WGL_CONTEXT_PROFILE_MASK_ARB,
@@ -427,7 +430,7 @@ impl Wgl {
         );
 
         if gl_ctx.is_null() {
-            eprintln!("WGL: failed to create 3.1 context, trying 2.1");
+            eprintln!("WGL: failed to create 3.2 context, trying 2.1");
 
             let attrs = [
                 WGL_CONTEXT_MAJOR_VERSION_ARB,
